@@ -57,6 +57,15 @@ public class AutoRefin implements Behavior, Configurable<AutoRefinConfig> {
         if (!isReadyForRefining())
             return; // check if we can refine
 
+        if (getCargoPercent() < config.triggerPercent) {
+            // Reset tracking variables when cargo is below trigger percent
+            if (lastCargoAmount != -1) {
+                lastCargoAmount = -1;
+                lastRefineAttemptFailed = false;
+            }
+            return;
+        }
+
         int currentCargo = stats.getCargo();
 
         // If cargo hasn't changed since last failed refine attempt, skip to prevent
@@ -96,10 +105,7 @@ public class AutoRefin implements Behavior, Configurable<AutoRefinConfig> {
         if (main.config.MISCELLANEOUS.AUTO_REFINE || !darkbotApi.hasCapability(Capability.DIRECT_REFINE))
             return false;
 
-        if (guiManager.getAddress() == 0)
-            return false;
-
-        return (getCargoPercent() > config.triggerPercent);
+        return (guiManager.getAddress() != 0);
     }
 
     private boolean shouldRefineOre(Ore ore) {
