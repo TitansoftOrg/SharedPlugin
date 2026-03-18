@@ -1,16 +1,12 @@
 package dev.shared.do_gamer.module.simple_galaxy_gate.gate;
 
 import dev.shared.do_gamer.module.simple_galaxy_gate.StateStore;
-import dev.shared.do_gamer.module.simple_galaxy_gate.config.Maps;
 import eu.darkbot.api.config.types.BoxInfo;
 import eu.darkbot.api.config.types.NpcFlag;
-import eu.darkbot.api.config.types.NpcInfo;
 import eu.darkbot.api.game.entities.Box;
 import eu.darkbot.api.game.entities.Npc;
-import eu.darkbot.api.game.entities.Portal;
 import eu.darkbot.api.game.other.GameMap;
 import eu.darkbot.api.game.other.Locatable;
-import eu.darkbot.api.game.other.Lockable;
 import eu.darkbot.util.Timer;
 
 public class DseGate extends GateHandler {
@@ -23,26 +19,26 @@ public class DseGate extends GateHandler {
     private Timer jumpTimer = Timer.get(20_000L);
 
     public DseGate() {
-        this.npcRadiusMap.put("-=[ Emperor Sibelon ]=-", 630.0);
-        this.npcRadiusMap.put("-=[ Convict ]=-", 590.0);
-        this.npcRadiusMap.put("<=< Boss Kucurbium >=>", 630.0);
-        this.npcRadiusMap.put("..::{ Boss Lordakium }::...", 590.0);
-        this.npcRadiusMap.put("\\\\ Find VII //", 580.0);
+        this.npcMap.put("-={ Gygerim Overlord }=-", new NpcParam(590.0, -95));
+        this.npcMap.put("-=[ Convict ]=-", new NpcParam(590.0, -95));
+        this.npcMap.put("<=< Boss Kucurbium >=>", new NpcParam(630.0, -95));
+        this.npcMap.put("..::{ Boss Lordakium }::...", new NpcParam(590.0, -95));
+        this.npcMap.put("-=[ Emperor Sibelon ]=-", new NpcParam(630.0));
+        this.npcMap.put("-=[ Transport Ship ]=-", new NpcParam(400.0, 100, NpcFlag.NO_CIRCLE, NpcFlag.PASSIVE));
+        this.npcMap.put("-=[ Command Center ]=-", new NpcParam(400.0, 100, NpcFlag.NO_CIRCLE, NpcFlag.PASSIVE));
+        this.defaultNpcParam = new NpcParam(580.0);
+        this.repairRadius = REPAIR_RADIUS;
+        this.approachToCenter = false;
     }
 
     @Override
     public boolean prepareTickModule() {
         // Handle GUI interaction or traveling to gate
-        if (this.handleTravelToGate()) {
+        if (this.handleTravelToGate(PORTAL_TYPE_ID)) {
             StateStore.request(StateStore.State.TRAVELING_TO_GATE);
             this.reset();
             return true;
         }
-        return false;
-    }
-
-    @Override
-    public boolean isApproachToCenter() {
         return false;
     }
 
@@ -53,29 +49,7 @@ public class DseGate extends GateHandler {
 
     @Override
     public GameMap getMapForTravel() {
-        if (!Maps.isGateOnCurrentMap(this.module.getConfig().gateId, this.module.starSystem)) {
-            int faction = this.getHeroFractionIdx();
-            if (faction == -1) {
-                return null; // Unknown faction, cannot determine map
-            }
-
-            String map = String.format("%d-1", faction);
-            return this.module.starSystem.getOrCreateMap(map);
-        }
-        return null; // Already on gate map, no need to travel
-    }
-
-    /**
-     * Handles traveling to the gate portal if it's visible
-     */
-    private boolean handleTravelToGate() {
-        // Check for portal and travel if found
-        Portal portal = this.getPortalByTypeId(PORTAL_TYPE_ID);
-        if (portal != null) {
-            this.module.jumper.travelAndJump(portal);
-            return true;
-        }
-        return false; // Not traveling, allow default logic
+        return this.getFactionMapForTravel(1); // travel to map x-1
     }
 
     private boolean isGuardableNpc(Npc npc) {
@@ -85,34 +59,6 @@ public class DseGate extends GateHandler {
 
     private boolean isMissileStorm(Npc npc) {
         return this.nameEquals(npc, "-=[ Missile-Storm ]=-");
-    }
-
-    @Override
-    public double getTargetRadius(Lockable target) {
-        double radius = super.getTargetRadius(target);
-        if (radius > 0) {
-            return radius; // Return stored radius if already processed
-        }
-
-        Npc npc = (Npc) target;
-        NpcInfo npcInfo = npc.getInfo();
-
-        // Populate the radius.
-        radius = 560.0;
-        if (this.isGuardableNpc(npc)) {
-            radius = 400.0;
-            npcInfo.setPriority(100);
-            npcInfo.setExtraFlag(NpcFlag.NO_CIRCLE, true);
-            npcInfo.setExtraFlag(NpcFlag.PASSIVE, true);
-        }
-        npcInfo.setShouldKill(true);
-        npcInfo.setRadius(radius);
-        return radius;
-    }
-
-    @Override
-    public double getRepairRadius() {
-        return REPAIR_RADIUS;
     }
 
     @Override
