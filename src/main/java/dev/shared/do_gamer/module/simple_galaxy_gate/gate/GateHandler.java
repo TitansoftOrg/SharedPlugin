@@ -33,6 +33,7 @@ public class GateHandler {
     protected boolean approachToCenter = true;
     protected boolean skipFarTargets = true;
     protected boolean fetchServerOffset = false;
+    protected boolean safeRefreshInGate = true;
 
     // Enum to represent the decision on whether to kill an NPC
     public enum KillDecision {
@@ -249,6 +250,20 @@ public class GateHandler {
      */
     public boolean isFetchServerOffset() {
         return this.fetchServerOffset;
+    }
+
+    /**
+     * Determines if it's safe to refresh the map while in the gate.
+     */
+    public final boolean canSafeRefreshInGate() {
+        if (this.safeRefreshInGate) {
+            return this.module.isMapGG()
+                    && this.module.lootModule.getNpcs().isEmpty()
+                    && this.module.collectorModule.hasNoBox()
+                    && this.module.entities.getPortals().stream()
+                            .anyMatch(p -> p.distanceTo(this.module.hero) < 1_000.0);
+        }
+        return false;
     }
 
     /**
