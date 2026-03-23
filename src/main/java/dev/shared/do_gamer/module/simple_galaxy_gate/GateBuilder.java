@@ -26,6 +26,7 @@ public final class GateBuilder {
     private final Timer placeTimer = Timer.get(3_000L);
     private final Timer spinTimer = Timer.get();
     private final Timer moveShipTimer = Timer.get(30_000L);
+    private final Timer globalTimer = Timer.get(60_000L);
 
     private int galaxyInfoFailCount = 0;
     private int shipSwitchAttempts = 0;
@@ -54,15 +55,12 @@ public final class GateBuilder {
         this.spinTimer.disarm();
         this.placeTimer.disarm();
         this.moveShipTimer.disarm();
+        this.globalTimer.disarm();
     }
 
     public boolean tick() {
-        if (this.module.getConfig() == null || !this.module.getConfig().builder.enabled) {
-            return false; // Building disabled
-        }
-
-        if (StateStore.current() != StateStore.State.WAITING && StateStore.current() != StateStore.State.BUILDING) {
-            return false; // Not in a state to build
+        if (this.isBuildingUnavailable()) {
+            return false;
         }
 
         GalaxyGate targetGate = Maps.resolveBuildGate(this.module.getConfig().gateId);
@@ -70,11 +68,12 @@ public final class GateBuilder {
             return false; // Not buildable gate
         }
 
-        if (this.spinTimer.isActive()) {
+        if (this.handleGlobalTimeout() || this.spinTimer.isActive()) {
             return true; // In timeout period, skip building
         }
 
         if (this.state == BuildState.EXIT) {
+            this.globalTimer.disarm(); // Reset global timer when exiting build state
             return false; // Finished building
         }
 
@@ -83,14 +82,11 @@ public final class GateBuilder {
             return true; // Switch back to gate ship after building
         }
 
-        if (this.state == BuildState.NONE) {
-            // Wait before start build (also helps to prevent the builder stuck)
-            this.spinTimer.activate(5_000L);
-            this.state = BuildState.PREPARE;
+        if (this.handleInitialBuildState()) {
             return true;
         }
 
-        Boolean updated = this.galaxyManager.updateGalaxyInfos(500);
+        Boolean updated = this.galaxyManager.updateGalaxyInfos(10_000);
         if (Boolean.FALSE.equals(updated)) {
             this.spinTimer.activate(1_000L);
             this.handleGalaxyInfoFetchFailure();
@@ -128,13 +124,44 @@ public final class GateBuilder {
             return true; // Switch to build ship before starting to build
         }
 
+        this.performGateSpinCycle(info, targetGate);
+        return true;
+    }
+
+    /**
+     * Performs the gate spinning cycle.
+     */
+    private void performGateSpinCycle(GalaxyInfo info, GalaxyGate targetGate) {
         double progress = this.getProgress(info, targetGate);
         SpinOption spinOption = this.getSpinOption(progress);
         long waitTime = (spinOption.waitMs * this.module.getConfig().builder.speed.multiplier);
         this.spinTimer.activate(waitTime);
-        this.galaxyManager.spinGate(targetGate, this.module.getConfig().builder.useMultiAt, spinOption.spins, 10);
+        this.galaxyManager.spinGate(targetGate, this.module.getConfig().builder.useMultiAt, spinOption.spins, 10)
+                .ifPresent(success -> this.globalTimer.disarm()); // Reset global timer on successful spin
         this.moveShipPeriodically(); // Move ship to avoid AFK
-        return true;
+    }
+
+    /**
+     * Checks whether building is unavailable due to config or state.
+     */
+    private boolean isBuildingUnavailable() {
+        return this.module.getConfig() == null
+                || !this.module.getConfig().builder.enabled
+                || (StateStore.current() != StateStore.State.WAITING
+                        && StateStore.current() != StateStore.State.BUILDING);
+    }
+
+    /**
+     * Handles the initial NONE state before building starts.
+     */
+    private boolean handleInitialBuildState() {
+        if (this.state == BuildState.NONE) {
+            // Wait before start build (also helps to prevent the builder stuck)
+            this.spinTimer.activate(5_000L);
+            this.state = BuildState.PREPARE;
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -161,6 +188,7 @@ public final class GateBuilder {
             this.state = successState;
             this.spinTimer.activate(5_000L); // Wait after switching
             this.shipSwitchAttempts = 0; // Reset fail count on successful switch
+            this.globalTimer.disarm(); // Reset global timer on successful switch
             return;
         }
         this.spinTimer.activate(3_000L); // Wait before retrying
@@ -388,5 +416,21 @@ public final class GateBuilder {
             this.module.bot.handleRefresh();
             this.galaxyInfoFailCount = 0;
         }
+    }
+
+    /**
+     * Handles the global timeout by refreshing the game and resetting the state
+     * if the builder has been active for too long without completing the build.
+     */
+    private boolean handleGlobalTimeout() {
+        if (!this.globalTimer.isArmed()) {
+            this.globalTimer.activate();
+        } else if (this.globalTimer.isInactive()) {
+            System.out.println("Global timeout reached, resetting builder state and refreshing the game...");
+            this.module.bot.handleRefresh();
+            this.reset();
+            return true; // Indicate that a refresh occurred
+        }
+        return false;
     }
 }

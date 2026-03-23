@@ -2,6 +2,10 @@ package dev.shared.do_gamer.module.simple_galaxy_gate.gate;
 
 import java.time.LocalDateTime;
 
+import com.github.manolo8.darkbot.Main;
+import com.github.manolo8.darkbot.core.objects.facades.EscortProxy;
+import com.github.manolo8.darkbot.core.utils.ByteUtils;
+
 import dev.shared.do_gamer.module.simple_galaxy_gate.StateStore;
 import dev.shared.do_gamer.utils.ServerTimeHelper;
 import eu.darkbot.api.config.types.NpcFlag;
@@ -20,6 +24,7 @@ public final class MimesisMutinyGate extends GateHandler {
     private static final long EXTENDED_WAIT_THRESHOLD_SECONDS = 3_600L; // 1 hour
     private final Timer stopTimer = Timer.get();
     private boolean autoStart = false;
+    private EscortProxy escort;
 
     public MimesisMutinyGate() {
         this.npcMap.put("-=[ Warhead ]=-", new NpcParam(560.0, -100));
@@ -48,6 +53,12 @@ public final class MimesisMutinyGate extends GateHandler {
         this.repairRadius = REPAIR_RADIUS;
         this.farTargetDistance = FAR_TARGET_DISTANCE;
         this.preferTargetDistanceOffset = PREFER_TARGET_DISTANCE_OFFSET;
+        // Probably will never use Kamikaze in this gate,
+        // but set offset to 0 just in case
+        this.kamikazeOffsetX = 0.0;
+        this.kamikazeOffsetY = 0.0;
+
+        this.escort = Main.INSTANCE.facadeManager.escort;
     }
 
     /**
@@ -180,11 +191,22 @@ public final class MimesisMutinyGate extends GateHandler {
     }
 
     /**
+     * Reads the number of keys required for the next gate opening
+     * Note: This method should be removed when fix added to Darkbot.
+     */
+    private double getKeys() {
+        long data = Main.API.readLong(this.escort.getAddress() + 48) & ByteUtils.ATOM_MASK;
+        // Note: this fix should be added to Darkbot
+        // Original: API.readInt(API.readLong(data + 88) + 40)
+        return Main.API.readDouble(Main.API.readLong(data + 88) + 56);
+    }
+
+    /**
      * Sets the module status to show the remaining time until the next gate opening
      */
     private void setWaitingStatus(long seconds) {
         String time = ServerTimeHelper.remainingTimeFormat(seconds);
-        this.statusDetails = String.format("start in %s", time);
+        this.statusDetails = String.format("start in %s (%.0f keys)", time, this.getKeys());
     }
 
     @Override
@@ -215,7 +237,6 @@ public final class MimesisMutinyGate extends GateHandler {
             return true;
         }
 
-        this.statusDetails = null; // reset status details
         this.reset();
         return false; // Allow default preparation logic to take over
     }
@@ -258,5 +279,8 @@ public final class MimesisMutinyGate extends GateHandler {
     @Override
     public void reset() {
         this.resetCachedGuardableNpc();
+        if (!this.autoStart) {
+            this.statusDetails = null; // reset status details
+        }
     }
 }
